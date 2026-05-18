@@ -1,6 +1,7 @@
 package com.example.myapplication.data.repository
 
 import android.net.Uri
+import android.util.Log
 import com.example.myapplication.data.model.Report
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -58,19 +59,27 @@ class ReportRepository(
     }
 
     fun getReports(): Flow<List<Report>> = callbackFlow {
-        val subscription = firestore.collection("reports")
-            .orderBy("timestamp", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
+        try {
+            val subscription = firestore.collection("reports")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e("ReportRepository", "Firestore listener error: ${error.message}")
+                        // Don't close with error to avoid crashing the app if not caught
+                        trySend(emptyList())
+                        return@addSnapshotListener
+                    }
+                    if (snapshot != null) {
+                        val reports = snapshot.toObjects(Report::class.java)
+                        trySend(reports)
+                    }
                 }
-                if (snapshot != null) {
-                    val reports = snapshot.toObjects(Report::class.java)
-                    trySend(reports)
-                }
-            }
-        awaitClose { subscription.remove() }
+            awaitClose { subscription.remove() }
+        } catch (e: Exception) {
+            Log.e("ReportRepository", "Failed to setup Firestore listener: ${e.message}")
+            trySend(emptyList())
+            close(e)
+        }
     }
 
     suspend fun updateReportStatus(reportId: String, status: String): Result<Unit> {

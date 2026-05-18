@@ -7,6 +7,7 @@ import com.example.myapplication.data.model.Report
 import com.example.myapplication.data.repository.ReportRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 class ReportViewModel(private val repository: ReportRepository = ReportRepository()) : ViewModel() {
@@ -14,17 +15,24 @@ class ReportViewModel(private val repository: ReportRepository = ReportRepositor
     private val _reportState = MutableStateFlow<ReportState>(ReportState.Idle)
     val reportState: StateFlow<ReportState> = _reportState
 
-    val reports: StateFlow<List<Report>> = MutableStateFlow(emptyList())
+    private val _reports = MutableStateFlow<List<Report>>(emptyList())
+    val reports: StateFlow<List<Report>> = _reports
 
-    init {
-        observeReports()
-    }
+    private var isObserving = false
 
-    private fun observeReports() {
+    // We no longer call observeReports() in init to prevent startup crashes
+    
+    fun startObservingReports() {
+        if (isObserving) return
+        isObserving = true
         viewModelScope.launch {
-            repository.getReports().collect { list ->
-                (reports as MutableStateFlow).value = list
-            }
+            repository.getReports()
+                .catch { e ->
+                    _reportState.value = ReportState.Error(e.message ?: "Failed to load reports")
+                }
+                .collect { list ->
+                    _reports.value = list
+                }
         }
     }
 
